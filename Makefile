@@ -1,5 +1,5 @@
-build:
-	go build main.go -o bin/sosreport-operator-cli
+build: clean
+	go build -o bin/sosreport-operator-cli main.go
 
 run:
 	go run main.go
