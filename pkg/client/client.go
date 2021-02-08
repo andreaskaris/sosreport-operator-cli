@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	// "k8s.io/apimachinery/pkg/api/errors"
@@ -103,16 +104,23 @@ func (c *Client) buildNodeSelector(selectorString string, selectorType string) (
 	return nodeSelector, nil
 }
 
-func (c *Client) buildTolerations(t string) ([]corev1.Toleration, error) {
-	tolerations := []corev1.Toleration{
-		corev1.Toleration{
-			Key:    "node-role.kubernetes.io/master",
-			Effect: corev1.TaintEffectNoSchedule,
-		},
-		corev1.Toleration{
-			Key:    "node.kubernetes.io/not-ready",
-			Effect: corev1.TaintEffectNoSchedule,
-		},
+/*
+We simplify here - if the role is "master", create a toleration for master roles
+If the role name contains "master", do the same
+That's overly simplistic and will not catch all use cases.
+For the time being, it's o.k. though
+*/
+func (c *Client) buildTolerations(selectorString string, selectorType string) ([]corev1.Toleration, error) {
+	var tolerations []corev1.Toleration
+
+	if (selectorType == "role" && selectorString == "master") ||
+		(selectorType == "hostname" && strings.Contains(selectorString, "master")) {
+		tolerations = []corev1.Toleration{
+			corev1.Toleration{
+				Key:    "node-role.kubernetes.io/master",
+				Effect: corev1.TaintEffectNoSchedule,
+			},
+		}
 	}
 	return tolerations, nil
 }
@@ -126,15 +134,25 @@ func (c *Client) CreateSosreport(commandLine *cli.Cli) error {
 
 	var err error
 	var nodeSelector map[string]string
+	var tolerations []corev1.Toleration
+
 	if commandLine.NodeName != "" {
 		log.Debug(fmt.Sprintf("Building nodeSelector based on NodeName '%s'", commandLine.NodeName))
 		nodeSelector, err = c.buildNodeSelector(commandLine.NodeName, "hostname")
 		if err != nil {
 			return err
 		}
+		tolerations, err = c.buildTolerations(commandLine.NodeName, "hostname")
+		if err != nil {
+			return err
+		}
 	} else if commandLine.Role != "" {
 		log.Debug(fmt.Sprintf("Building nodeSelector based on Role '%s'", commandLine.Role))
 		nodeSelector, err = c.buildNodeSelector(commandLine.Role, "role")
+		if err != nil {
+			return err
+		}
+		tolerations, err = c.buildTolerations(commandLine.Role, "role")
 		if err != nil {
 			return err
 		}
@@ -149,8 +167,6 @@ func (c *Client) CreateSosreport(commandLine *cli.Cli) error {
 		)
 	}
 	log.Debug(fmt.Sprintf("Using generated nodeSelector:\n%s", nodeSelector))
-
-	tolerations, _ := c.buildTolerations("")
 	log.Debug(fmt.Sprintf("tolerations: %s", tolerations))
 
 	apiName := "support.openshift.io"
