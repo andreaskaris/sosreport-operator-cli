@@ -18,6 +18,8 @@ type Cli struct {
 	Username     string
 	Password     string
 	LogLevel     log.Level
+	DryRun       bool
+	YamlDir      string
 }
 
 func NewCli() (*Cli, error) {
@@ -33,7 +35,9 @@ func NewCli() (*Cli, error) {
 	ftpServer := flag.String("ftp-server", "", "Specify an FTP server to upload to")
 	username := flag.String("username", "", "Username for RH portal or FTP")
 	password := flag.String("password", "", "Password for RH portal or FTP")
-	logLevel := flag.String("loglevel", "", "Log level for this application")
+	logLevel := flag.String("log-level", "", "Log level for this application")
+	dryRun := flag.Bool("dry-run", false, "Dry run - generate YAML only")
+	yamlDir := flag.String("yaml-dir", "", "If this is specified, write YAML files to dir (local dir otherwise)")
 
 	flag.Parse()
 
@@ -65,6 +69,8 @@ func NewCli() (*Cli, error) {
 	default:
 		c.LogLevel = log.InfoLevel
 	}
+	c.DryRun = *dryRun
+	c.YamlDir = *yamlDir
 
 	return c, nil
 }

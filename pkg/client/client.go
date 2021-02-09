@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -15,15 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/openstack"
+	//"github.com/go-yaml/yaml"
+	"github.com/ghodss/yaml"
 )
 
 type Client struct {
@@ -89,16 +84,16 @@ func (c *Client) buildNodeSelector(selectorString string, selectorType string) (
 	var nodeSelector map[string]string
 
 	switch selectorType {
-		case "role":
-			nodeSelector = map[string]string{
-				fmt.Sprintf("node-role.kubernetes.io/%s", selectorString): "",
-			}
-		case "hostname":
-			nodeSelector = map[string]string{
-				"kubernetes.io/hostname": selectorString,
-			}
-		default:
-			return nil, fmt.Errorf("Invalid selector type: %s", selectorType)
+	case "role":
+		nodeSelector = map[string]string{
+			fmt.Sprintf("node-role.kubernetes.io/%s", selectorString): "",
+		}
+	case "hostname":
+		nodeSelector = map[string]string{
+			"kubernetes.io/hostname": selectorString,
+		}
+	default:
+		return nil, fmt.Errorf("Invalid selector type: %s", selectorType)
 	}
 
 	return nodeSelector, nil
@@ -123,6 +118,40 @@ func (c *Client) buildTolerations(selectorString string, selectorType string) ([
 		}
 	}
 	return tolerations, nil
+}
+
+func (c *Client) writeYaml(writeDirectory string, sosreportName string, object interface{}) error {
+	yamlString, err := yaml.Marshal(object)
+	if err != nil {
+		return err
+	}
+	log.Debug(fmt.Sprintf(
+		"Generating YAML file '%s' with content:\n---\n%s\n---",
+		sosreportName,
+		yamlString,
+	),
+	)
+	yamlByteString := []byte(yamlString)
+	if writeDirectory == "" {
+		writeDirectory = "."
+	}
+
+	fi, err := os.Stat(writeDirectory)
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsDir() {
+		return fmt.Errorf("Path '%s' is not a directory", writeDirectory)
+	}
+
+	fullPath := writeDirectory + "/" + sosreportName + ".yaml"
+	err = ioutil.WriteFile(fullPath, yamlByteString, 0644)
+	if err != nil {
+		return err
+	}
+	log.Info(fmt.Sprintf("Created file '%s'", fullPath))
+
+	return nil
 }
 
 func (c *Client) CreateSosreport(commandLine *cli.Cli) error {
@@ -190,6 +219,11 @@ func (c *Client) CreateSosreport(commandLine *cli.Cli) error {
 		},
 	}
 
+	if commandLine.DryRun {
+		err = c.writeYaml(commandLine.YamlDir, sosreportName, sosreport)
+		return err
+	}
+
 	// https://stackoverflow.com/questions/63408493/create-get-a-custom-kubernetes-resource
 	// https://stackoverflow.com/questions/52029656/how-to-retrieve-kubernetes-metrics-via-client-go-and-golang?rq=1
 	path := fmt.Sprintf("/apis/%s/%s/namespaces/%s/%s",
@@ -238,4 +272,3 @@ func (c *Client) PrintPods() {
 	pods, _ := c.clientset.CoreV1().Pods("").List(c.ctx, metav1.ListOptions{})
 	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
 }
-
