@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	// "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -14,11 +15,18 @@ import (
 	supportv1alpha1 "github.com/andreaskaris/sosreport-operator/api/v1alpha1"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	errorsv1 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	//"github.com/go-yaml/yaml"
 	"github.com/ghodss/yaml"
+)
+
+const (
+	GLOBAL_CONFIG_MAP = "sosreport-global-configuration"
+	UPLOAD_CONFIG_MAP = "sosreport-upload-configuration"
+	UPLOAD_SECRET = "sosreport-upload-secret"
 )
 
 type Client struct {
@@ -120,14 +128,14 @@ func (c *Client) buildTolerations(selectorString string, selectorType string) ([
 	return tolerations, nil
 }
 
-func (c *Client) writeYaml(writeDirectory string, sosreportName string, object interface{}) error {
+func (c *Client) writeYaml(writeDirectory string, outputFileName string, object interface{}) error {
 	yamlString, err := yaml.Marshal(object)
 	if err != nil {
 		return err
 	}
 	log.Debug(fmt.Sprintf(
 		"Generating YAML file '%s' with content:\n---\n%s\n---",
-		sosreportName,
+		outputFileName,
 		yamlString,
 	),
 	)
@@ -144,13 +152,191 @@ func (c *Client) writeYaml(writeDirectory string, sosreportName string, object i
 		return fmt.Errorf("Path '%s' is not a directory", writeDirectory)
 	}
 
-	fullPath := writeDirectory + "/" + sosreportName + ".yaml"
+	fullPath := writeDirectory + "/" + outputFileName + ".yaml"
 	err = ioutil.WriteFile(fullPath, yamlByteString, 0644)
 	if err != nil {
 		return err
 	}
 	log.Info(fmt.Sprintf("Created file '%s'", fullPath))
 
+	return nil
+}
+
+func (c *Client) writeConfigMap(cmName string, data map[string]string, dryRun bool, yamlDir string) error {
+	// GLOBAL_CONFIG_MAP = sosreport-global-configuration
+	// UPLOAD_CONFIG_MAP = sosreport-upload-configuration
+	// UPLOAD_SECRET = sosreport-upload-secret
+	log.Debug(fmt.Sprintf("Working with ConfigMap: %s", cmName))
+
+	sosreportNamespace, _ := c.buildSosreportNamespace()
+	log.Debug(fmt.Sprintf("sosreportNamespace: %s", sosreportNamespace))
+
+	createCm := false
+
+	cm, err := c.clientset.CoreV1().ConfigMaps(sosreportNamespace).Get(
+		c.ctx, 
+		cmName, 
+		metav1.GetOptions{})
+
+	// determine if ConfigMap already exists or not
+	if err != nil {
+		if _, ok := err.(*errorsv1.StatusError); ! ok {
+			return err
+		} else if ! strings.Contains(err.Error(), "not found") {
+			return err
+		}
+		createCm = true
+	}
+
+	// if the cm does not exist, cm will have empty fields
+	// otherwise, cm will already contain data
+	// either way, work with what we have and either we will create or update
+	// the configmap
+	cm.Name = cmName
+	cm.TypeMeta.Kind = "ConfigMap"
+	cm.TypeMeta.APIVersion = "v1"
+	if cm.Data == nil {
+		cm.Data = make(map[string]string)
+	}
+	for k, v := range data {
+		cm.Data[k] = v
+	}
+
+	// if this is a dryRun, create file, print and stop here
+	if dryRun {
+		err = c.writeYaml(yamlDir, cmName, cm)
+		return err
+	}
+
+	if createCm {
+		log.Info(fmt.Sprintf("Creating ConfigMap '%s'", cm.Name))
+		log.Debug(fmt.Sprintf("Creating ConfigMap '%s' with contents '%v'", cm.Name, cm))
+		cm, err = c.clientset.CoreV1().ConfigMaps(sosreportNamespace).Create(
+			c.ctx,
+			cm,
+			metav1.CreateOptions{},
+		)
+	} else {
+		log.Info(fmt.Sprintf("Updating ConfigMap '%s'", cm.Name))
+		log.Debug(fmt.Sprintf("Updating ConfigMap '%s' with contents '%v'", cm.Name, cm))
+		cm, err = c.clientset.CoreV1().ConfigMaps(sosreportNamespace).Update(
+			c.ctx,
+			cm,
+			metav1.UpdateOptions{},
+		)
+	}
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) writeSecret(secretName string, data map[string]string, dryRun bool, yamlDir string) error {
+	// GLOBAL_CONFIG_MAP = sosreport-global-configuration
+	// UPLOAD_CONFIG_MAP = sosreport-upload-configuration
+	// UPLOAD_SECRET = sosreport-upload-secret
+	log.Debug(fmt.Sprintf("Working with Secret: %s", secretName))
+
+	sosreportNamespace, _ := c.buildSosreportNamespace()
+	log.Debug(fmt.Sprintf("sosreportNamespace: %s", sosreportNamespace))
+
+	createSecret := false
+
+	secret, err := c.clientset.CoreV1().Secrets(sosreportNamespace).Get(
+		c.ctx, 
+		secretName, 
+		metav1.GetOptions{})
+
+	// determine if ConfigMap already exists or not
+	if err != nil {
+		if _, ok := err.(*errorsv1.StatusError); ! ok {
+			return err
+		} else if ! strings.Contains(err.Error(), "not found") {
+			return err
+		}
+		createSecret = true
+	}
+
+	// if the cm does not exist, cm will have empty fields
+	// otherwise, cm will already contain data
+	// either way, work with what we have and either we will create or update
+	// the configmap
+	secret.Name = secretName
+	secret.TypeMeta.Kind = "Secret"
+	secret.TypeMeta.APIVersion = "v1"
+	if secret.Data == nil {
+		secret.Data = make(map[string][]byte)
+	}
+	for k, v := range data {
+		// log.Trace(fmt.Sprintf("Setting Secret field '%s' to: %s", k, v))
+		// secretV := make(
+                //         []byte,
+                //         base64.StdEncoding.EncodedLen(len(v)),
+                // )
+		// base64.StdEncoding.Encode(
+		// 	secretV,
+		// 	[]byte(v),
+		// )
+
+		// log.Trace(fmt.Sprintf("Setting Secret field '%s' to hash: %s", k, secretV))
+		// secret.Data[k] = secretV
+		log.Trace(fmt.Sprintf("Setting Secret field '%s' to: %s", k, v))
+		secret.Data[k] = []byte(v)
+	}
+
+	// if this is a dryRun, create file, print and stop here
+	if dryRun {
+		err = c.writeYaml(yamlDir, secretName, secret)
+		return err
+	}
+
+	if createSecret {
+		log.Info(fmt.Sprintf("Creating Secret '%s'", secret.Name))
+		log.Debug(fmt.Sprintf("Creating Secret '%s' with contents '%v'", secret.Name, secret))
+		secret, err = c.clientset.CoreV1().Secrets(sosreportNamespace).Create(
+			c.ctx,
+			secret,
+			metav1.CreateOptions{},
+		)
+	} else {
+		log.Info(fmt.Sprintf("Updating Secret '%s'", secret.Name))
+		log.Debug(fmt.Sprintf("Updating Secret '%s' with contents '%v'", secret.Name, secret))
+		secret, err = c.clientset.CoreV1().Secrets(sosreportNamespace).Update(
+			c.ctx,
+			secret,
+			metav1.UpdateOptions{},
+		)
+	}
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) WriteUploadConfigMap(commandLine *cli.Cli) error {
+	data := map[string]string {
+		"upload-method": commandLine.UploadMethod,
+		"case-number": commandLine.CaseNumber,
+		"nfs-share": commandLine.NfsShare,
+		"nfs-options": commandLine.NfsOptions,
+		"ftp-server": commandLine.FtpServer,
+	}
+	if commandLine.Obfuscate {
+		data["obfuscate"] = "true"
+	} else {
+		data["obfuscate"] = "false"
+	}
+	return c.writeConfigMap(UPLOAD_CONFIG_MAP, data, commandLine.DryRun, commandLine.YamlDir)
+}
+
+func (c *Client) WriteUploadSecret(commandLine *cli.Cli) error {
+	data := map[string]string {
+		"username": commandLine.Username,
+		"password": commandLine.Password,
+	}
+	return c.writeSecret(UPLOAD_SECRET, data, commandLine.DryRun, commandLine.YamlDir)
 	return nil
 }
 
@@ -265,10 +451,3 @@ func (c *Client) CreateSosreport(commandLine *cli.Cli) error {
 	return nil
 }
 
-/*
-Print all pods in the cluster - just for testing
-*/
-func (c *Client) PrintPods() {
-	pods, _ := c.clientset.CoreV1().Pods("").List(c.ctx, metav1.ListOptions{})
-	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
-}

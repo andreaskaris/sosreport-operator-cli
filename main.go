@@ -32,6 +32,16 @@ func main() {
 		PrintError(err)
 	}
 
+
+	/* if err = c.WriteGlobalConfigMap(commandLine); err != nil {
+		PrintError(err)
+	}*/
+	if err = c.WriteUploadSecret(commandLine); err != nil {
+		PrintError(err)
+	}
+	if err = c.WriteUploadConfigMap(commandLine); err != nil {
+		PrintError(err)
+	}
 	if err = c.CreateSosreport(commandLine); err != nil {
 		PrintError(err)
 	}
