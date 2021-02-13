@@ -32,7 +32,6 @@ func main() {
 		PrintError(err)
 	}
 
-
 	/* if err = c.WriteGlobalConfigMap(commandLine); err != nil {
 		PrintError(err)
 	}*/

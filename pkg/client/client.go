@@ -26,7 +26,7 @@ import (
 const (
 	GLOBAL_CONFIG_MAP = "sosreport-global-configuration"
 	UPLOAD_CONFIG_MAP = "sosreport-upload-configuration"
-	UPLOAD_SECRET = "sosreport-upload-secret"
+	UPLOAD_SECRET     = "sosreport-upload-secret"
 )
 
 type Client struct {
@@ -174,15 +174,15 @@ func (c *Client) writeConfigMap(cmName string, data map[string]string, dryRun bo
 	createCm := false
 
 	cm, err := c.clientset.CoreV1().ConfigMaps(sosreportNamespace).Get(
-		c.ctx, 
-		cmName, 
+		c.ctx,
+		cmName,
 		metav1.GetOptions{})
 
 	// determine if ConfigMap already exists or not
 	if err != nil {
-		if _, ok := err.(*errorsv1.StatusError); ! ok {
+		if _, ok := err.(*errorsv1.StatusError); !ok {
 			return err
-		} else if ! strings.Contains(err.Error(), "not found") {
+		} else if !strings.Contains(err.Error(), "not found") {
 			return err
 		}
 		createCm = true
@@ -244,15 +244,15 @@ func (c *Client) writeSecret(secretName string, data map[string]string, dryRun b
 	createSecret := false
 
 	secret, err := c.clientset.CoreV1().Secrets(sosreportNamespace).Get(
-		c.ctx, 
-		secretName, 
+		c.ctx,
+		secretName,
 		metav1.GetOptions{})
 
 	// determine if ConfigMap already exists or not
 	if err != nil {
-		if _, ok := err.(*errorsv1.StatusError); ! ok {
+		if _, ok := err.(*errorsv1.StatusError); !ok {
 			return err
-		} else if ! strings.Contains(err.Error(), "not found") {
+		} else if !strings.Contains(err.Error(), "not found") {
 			return err
 		}
 		createSecret = true
@@ -271,9 +271,9 @@ func (c *Client) writeSecret(secretName string, data map[string]string, dryRun b
 	for k, v := range data {
 		// log.Trace(fmt.Sprintf("Setting Secret field '%s' to: %s", k, v))
 		// secretV := make(
-                //         []byte,
-                //         base64.StdEncoding.EncodedLen(len(v)),
-                // )
+		//         []byte,
+		//         base64.StdEncoding.EncodedLen(len(v)),
+		// )
 		// base64.StdEncoding.Encode(
 		// 	secretV,
 		// 	[]byte(v),
@@ -316,12 +316,12 @@ func (c *Client) writeSecret(secretName string, data map[string]string, dryRun b
 }
 
 func (c *Client) WriteUploadConfigMap(commandLine *cli.Cli) error {
-	data := map[string]string {
+	data := map[string]string{
 		"upload-method": commandLine.UploadMethod,
-		"case-number": commandLine.CaseNumber,
-		"nfs-share": commandLine.NfsShare,
-		"nfs-options": commandLine.NfsOptions,
-		"ftp-server": commandLine.FtpServer,
+		"case-number":   commandLine.CaseNumber,
+		"nfs-share":     commandLine.NfsShare,
+		"nfs-options":   commandLine.NfsOptions,
+		"ftp-server":    commandLine.FtpServer,
 	}
 	if commandLine.Obfuscate {
 		data["obfuscate"] = "true"
@@ -332,7 +332,7 @@ func (c *Client) WriteUploadConfigMap(commandLine *cli.Cli) error {
 }
 
 func (c *Client) WriteUploadSecret(commandLine *cli.Cli) error {
-	data := map[string]string {
+	data := map[string]string{
 		"username": commandLine.Username,
 		"password": commandLine.Password,
 	}
@@ -450,4 +450,3 @@ func (c *Client) CreateSosreport(commandLine *cli.Cli) error {
 
 	return nil
 }
-
